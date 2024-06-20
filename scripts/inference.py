@@ -19,13 +19,10 @@ Usage:
 This script can be run from the command line with the following arguments:
 - audio_path: Path to the audio file.
 - image_path: Path to the source image.
-- face_mask_path: Path to the face mask image.
-- face_emb_path: Path to the face embeddings file.
 - output_path: Path to save the output video.
 
 Example:
-python scripts/inference.py --audio_path audio.wav --image_path image.jpg 
-    --face_mask_path face_mask.png --face_emb_path face_emb.pt --output_path output.mp4
+python scripts/inference.py --audio_path audio.wav --image_path image.jpg  --output_path output.mp4
 """
 
 import argparse
@@ -35,6 +32,10 @@ import torch
 from diffusers import AutoencoderKL, DDIMScheduler
 from omegaconf import OmegaConf
 from torch import nn
+
+import sys
+sys.path.append(
+    "/cpfs01/projects-HDD/cfff-6f3a36a0cd1e_HDD/zsy_43187/anna/workspaces/lihui/anna2/hallo")
 
 from hallo.animate.face_animate import FaceAnimatePipeline
 from hallo.datasets.audio_processor import AudioProcessor
@@ -229,8 +230,8 @@ def inference_process(args: argparse.Namespace):
     face_locator.requires_grad_(False)
     audio_proj.requires_grad_(False)
 
-    reference_unet.enable_gradient_checkpointing()
-    denoising_unet.enable_gradient_checkpointing()
+    # reference_unet.enable_gradient_checkpointing()
+    # denoising_unet.enable_gradient_checkpointing()
 
     net = Net(
         reference_unet,

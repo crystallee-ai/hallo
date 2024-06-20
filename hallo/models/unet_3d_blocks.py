@@ -700,7 +700,7 @@ class CrossAttnDownBlock3D(nn.Module):
                     encoder_hidden_states,
                 )
                 if len(motion_frame[0]) > 0:
-                    motion_frames = motion_frame[0][0]
+                    motion_frames = motion_frame[0][0] # [2,2,4096,320]
                     # motion_frames = torch.cat(motion_frames, dim=0)
                     motion_frames = rearrange(
                         motion_frames,
@@ -712,7 +712,7 @@ class CrossAttnDownBlock3D(nn.Module):
                     motion_frames = torch.zeros(
                         hidden_states.shape[0],
                         hidden_states.shape[1],
-                        4,
+                        2,
                         hidden_states.shape[3],
                         hidden_states.shape[4],
                     )
@@ -749,10 +749,30 @@ class CrossAttnDownBlock3D(nn.Module):
 
             else:
                 hidden_states = resnet(hidden_states, temb)
-                hidden_states = attn(
+                hidden_states, motion_frame = attn(
                     hidden_states,
                     encoder_hidden_states=encoder_hidden_states,
-                ).sample
+                    return_dict=False
+                )
+                if len(motion_frame[0]) > 0:
+                    # if motion_frame[0][0].numel() > 0:
+                    motion_frames = motion_frame[0][0]
+                    motion_frames = rearrange(
+                        motion_frames,
+                        "b f (d1 d2) c -> b c f d1 d2",
+                        d1=hidden_states.size(-1),
+                    )
+
+                else:
+                    motion_frames = torch.zeros(
+                        hidden_states.shape[0],
+                        hidden_states.shape[1],
+                        2,
+                        hidden_states.shape[3],
+                        hidden_states.shape[4],
+                    )
+                
+                n_motion_frames = motion_frames.size(2)
                 if audio_module is not None:
                     hidden_states = audio_module(
                         hidden_states,
@@ -765,9 +785,19 @@ class CrossAttnDownBlock3D(nn.Module):
                     )[0]
                 # add motion module
                 if motion_module is not None:
-                    hidden_states = motion_module(
-                        hidden_states, encoder_hidden_states=encoder_hidden_states
+                    motion_frames = motion_frames.to(
+                        device=hidden_states.device, dtype=hidden_states.dtype
+                        )
+
+                    _hidden_states = (
+                        torch.cat([motion_frames, hidden_states], dim=2)
+                        if n_motion_frames > 0
+                        else hidden_states
                     )
+                    hidden_states = motion_module(
+                        _hidden_states, encoder_hidden_states=encoder_hidden_states
+                    )
+                    hidden_states = hidden_states[:, :, n_motion_frames:]
 
             output_states += (hidden_states,)
 
@@ -918,13 +948,13 @@ class DownBlock3D(nn.Module):
                 hidden_states = resnet(hidden_states, temb)
 
                 # add motion module
-                hidden_states = (
-                    motion_module(
-                        hidden_states, encoder_hidden_states=encoder_hidden_states
-                    )
-                    if motion_module is not None
-                    else hidden_states
-                )
+                # hidden_states = (
+                #     motion_module(
+                #         hidden_states, encoder_hidden_states=encoder_hidden_states
+                #     )
+                #     if motion_module is not None
+                #     else hidden_states
+                # )
 
             output_states += (hidden_states,)
 
@@ -1163,7 +1193,7 @@ class CrossAttnUpBlock3D(nn.Module):
                     motion_frames = torch.zeros(
                         hidden_states.shape[0],
                         hidden_states.shape[1],
-                        4,
+                        2,
                         hidden_states.shape[3],
                         hidden_states.shape[4],
                     )
@@ -1202,11 +1232,31 @@ class CrossAttnUpBlock3D(nn.Module):
                     hidden_states = hidden_states[:, :, n_motion_frames:]
             else:
                 hidden_states = resnet(hidden_states, temb)
-                hidden_states = attn(
+                hidden_states, motion_frame = attn(
                     hidden_states,
                     encoder_hidden_states=encoder_hidden_states,
-                ).sample
+                    return_dict=False,
+                )
 
+                if len(motion_frame[0]) > 0:
+                    # if motion_frame[0][0].numel() > 0:
+                    motion_frames = motion_frame[0][0]
+                    motion_frames = rearrange(
+                        motion_frames,
+                        "b f (d1 d2) c -> b c f d1 d2",
+                        d1=hidden_states.size(-1),
+                    )
+
+                else:
+                    motion_frames = torch.zeros(
+                        hidden_states.shape[0],
+                        hidden_states.shape[1],
+                        2,
+                        hidden_states.shape[3],
+                        hidden_states.shape[4],
+                    )
+
+                n_motion_frames = motion_frames.size(2)
                 if audio_module is not None:
 
                     hidden_states = (
@@ -1220,13 +1270,20 @@ class CrossAttnUpBlock3D(nn.Module):
                         )
                     ).sample
                 # add motion module
-                hidden_states = (
-                    motion_module(
-                        hidden_states, encoder_hidden_states=encoder_hidden_states
+                if motion_module is not None:
+                    motion_frames = motion_frames.to(
+                        device=hidden_states.device, dtype=hidden_states.dtype
                     )
-                    if motion_module is not None
-                    else hidden_states
-                )
+
+                    _hidden_states = (
+                        torch.cat([motion_frames, hidden_states], dim=2)
+                        if n_motion_frames > 0
+                        else hidden_states
+                    )
+                    hidden_states = motion_module(
+                        _hidden_states, encoder_hidden_states=encoder_hidden_states
+                    )
+                    hidden_states = hidden_states[:, :, n_motion_frames:]
 
         if self.upsamplers is not None:
             for upsampler in self.upsamplers:
@@ -1386,13 +1443,13 @@ class UpBlock3D(nn.Module):
                 )
             else:
                 hidden_states = resnet(hidden_states, temb)
-                hidden_states = (
-                    motion_module(
-                        hidden_states, encoder_hidden_states=encoder_hidden_states
-                    )
-                    if motion_module is not None
-                    else hidden_states
-                )
+                # hidden_states = (
+                #     motion_module(
+                #         hidden_states, encoder_hidden_states=encoder_hidden_states
+                #     )
+                #     if motion_module is not None
+                #     else hidden_states
+                # )
 
         if self.upsamplers is not None:
             for upsampler in self.upsamplers:
